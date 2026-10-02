@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aplikasi Absensi Kelas - SPA</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- SheetJS (xlsx) CDN untuk Ekspor & Import Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  
+  <!-- SweetAlert2 CDN untuk Notifikasi Interaktif -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <!-- Firebase Compatibility SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+  <style>
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #area-cetak, #area-cetak * {
+        visibility: visible;
+      }
+      #area-cetak {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 font-sans">
+
+  <!-- Header & Navigasi Utama -->
+  <header class="bg-indigo-700 text-white shadow-lg sticky top-0 z-50 no-print">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-center gap-4">
+      <div>
+        <h1 class="text-2xl font-bold tracking-wide">SYSTEM ABSENSI KELAS</h1>
+        <p class="text-xs text-indigo-200">SMP Negeri 6 Metro - Realtime Cloud Sync</p>
+      </div>
+
+      <!-- Jam Digital -->
+      <div class="text-center md:text-right bg-indigo-800/60 px-4 py-2 rounded-lg border border-indigo-500/30">
+        <div id="jam-digital" class="text-xl font-mono font-bold tracking-widest text-yellow-300">00:00:00 WIB</div>
+        <div id="tanggal-digital" class="text-xs text-indigo-200">Sabtu, 3 Oktober 2026</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Panel Kontrol Navigasi Kelas & Menu -->
+    <section class="bg-white rounded-xl shadow-md p-5 border border-slate-200 no-print">
+      <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+        
+        <!-- Pilihan Kelas -->
+        <div class="flex items-center gap-3 w-full md:w-auto">
+          <label for="select-kelas" class="font-semibold text-slate-700 text-sm whitespace-nowrap">Pilih Kelas:</label>
+          <select id="select-kelas" onchange="gantiKelas()" class="w-full md:w-48 bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5 font-bold">
+            <option value="87">Kelas 87</option>
+            <option value="88">Kelas 88</option>
+            <option value="91">Kelas 91</option>
+            <option value="92">Kelas 92</option>
+            <option value="93">Kelas 93</option>
+            <option value="94">Kelas 94</option>
+          </select>
+        </div>
+
+        <!-- Tab Navigasi Fitur -->
+        <div class="flex flex-wrap gap-2 w-full md:w-auto justify-end">
+          <button onclick="bukaTab('absensi')" id="tab-btn-absensi" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg bg-indigo-600 text-white shadow">
+            Absensi Harian
+          </button>
+          <button onclick="bukaTab('siswa')" id="tab-btn-siswa" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300">
+            Kelola Siswa
+          </button>
+          <button onclick="bukaTab('rekap')" id="tab-btn-rekap" class="tab-btn px-4 py-2 text-sm font-semibold rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300">
+            Rekap Bulanan
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 1: ABSENSI HARIAN -->
+    <section id="tab-absensi" class="tab-content space-y-4">
+      <div class="bg-white rounded-xl shadow-md p-5 border border-slate-200" id="area-cetak">
+        
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 pb-4 border-b gap-3">
+          <div>
+            <h2 class="text-xl font-bold text-slate-800">Daftar Kehadiran <span id="label-kelas-absensi" class="text-indigo-600">87</span></h2>
+            <p class="text-xs text-slate-500">Pilih status absensi lalu klik tombol simpan.</p>
+          </div>
+
+          <div class="flex flex-wrap gap-2 no-print">
+            <button onclick="simpanAbsensi()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow transition flex items-center gap-1">
+              💾 Simpan Absensi Hari Ini
+            </button>
+            <button onclick="eksporRekapExcel()" class="bg-green-700 hover:bg-green-800 text-white text-sm font-bold px-3 py-2 rounded-lg shadow transition">
+              📊 Ekspor Excel
+            </button>
+            <button onclick="window.print()" class="bg-slate-700 hover:bg-slate-800 text-white text-sm font-bold px-3 py-2 rounded-lg shadow transition">
+              🖨️ Cetak PDF
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabel Absensi -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-slate-600 border-collapse">
+            <thead class="text-xs text-slate-700 uppercase bg-slate-100 border-b border-slate-200">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-center w-16">No</th>
+                <th scope="col" class="px-4 py-3 text-center w-24">No Absen</th>
+                <th scope="col" class="px-6 py-3">Nama Siswa</th>
+                <th scope="col" class="px-6 py-3 text-center">Status Kehadiran</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-absensi" class="divide-y divide-slate-200">
+              <!-- Data dimasukkan secara dinamis lewat JS -->
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 2: MANAJEMEN SISWA (CRUD & IMPORT) -->
+    <section id="tab-siswa" class="tab-content hidden space-y-4">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- Form Tambah Siswa -->
+        <div class="bg-white rounded-xl shadow-md p-5 border border-slate-200 h-fit">
+          <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b">Tambah Siswa Baru</h3>
+          <form id="form-siswa" onsubmit="tambahSiswa(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">No. Absen</label>
+              <input type="number" id="input-no-absen" required class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Nama Siswa</label>
+              <input type="text" id="input-nama-siswa" required class="w-full bg-slate-50 border border-slate-300 text-slate-900 text-sm rounded-lg p-2.5 focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg shadow text-sm transition">
+              + Tambahkan Siswa
+            </button>
+          </form>
+
+          <hr class="my-6 border-slate-200">
+
+          <!-- Import Excel -->
+          <div>
+            <h4 class="text-sm font-bold text-slate-800 mb-2">Import Data Massal (Excel)</h4>
+            <p class="text-xs text-slate-500 mb-3">Upload file Excel dengan kolom: <b>[No Absen, Nama Siswa, Kelas]</b></p>
+            <input type="file" id="input-excel" accept=".xlsx, .xls" class="block w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-3" />
+            <button onclick="importExcel()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 rounded-lg text-xs transition">
+              📥 Import dari Excel
+            </button>
+          </div>
+        </div>
+
+        <!-- Tabel Daftar Siswa per Kelas -->
+        <div class="lg:col-span-2 bg-white rounded-xl shadow-md p-5 border border-slate-200">
+          <h3 class="text-lg font-bold text-slate-800 mb-4 pb-2 border-b">Daftar Siswa Kelas <span id="label-kelas-siswa">87</span></h3>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left text-slate-600 border-collapse">
+              <thead class="text-xs text-slate-700 uppercase bg-slate-100 border-b">
+                <tr>
+                  <th scope="col" class="px-4 py-3 text-center w-20">No Absen</th>
+                  <th scope="col" class="px-6 py-3">Nama Siswa</th>
+                  <th scope="col" class="px-4 py-3 text-center w-36">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-siswa" class="divide-y divide-slate-200">
+                <!-- Data dimasukkan dinamis -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- TAB 3: REKAP BULANAN -->
+    <section id="tab-rekap" class="tab-content hidden space-y-4">
+      <div class="bg-white rounded-xl shadow-md p-5 border border-slate-200">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 pb-4 border-b gap-3">
+          <div>
+            <h2 class="text-xl font-bold text-slate-800">Rekapitulasi Kehadiran Bulanan - Kelas <span id="label-kelas-rekap">87</span></h2>
+            <p class="text-xs text-slate-500">Ringkasan total Sakit (S), Izin (I), dan Alpa (A) tiap siswa.</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-sm font-semibold">Bulan:</label>
+            <input type="month" id="filter-bulan" onchange="renderRekapBulanan()" class="bg-slate-50 border border-slate-300 text-sm rounded-lg p-2 font-bold">
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left text-slate-600 border-collapse">
+            <thead class="text-xs text-slate-700 uppercase bg-slate-100 border-b">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-center w-16">No Absen</th>
+                <th scope="col" class="px-6 py-3">Nama Siswa</th>
+                <th scope="col" class="px-4 py-3 text-center bg-yellow-50 text-yellow-800">Sakit (S)</th>
+                <th scope="col" class="px-4 py-3 text-center bg-blue-50 text-blue-800">Izin (I)</th>
+                <th scope="col" class="px-4 py-3 text-center bg-rose-50 text-rose-800">Alpa (A)</th>
+              </tr>
+            </thead>
+            <tbody id="tbody-rekap" class="divide-y divide-slate-200">
+              <!-- Data Rekap Bulanan -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- JAVASCRIPT APP LOGIC -->
+  <script>
+    // -------------------------------------------------------------
+    // 1. FIREBASE CONFIGURATION (Sesuaikan dengan milik Anda)
+    // -------------------------------------------------------------
+    const firebaseConfig = {
+      apiKey: "AIzaSyCSuf6rpnbZAXIGNQerCrMC6uAWnqS5uBk",
+      authDomain: "absensi-bahasa-inggris.firebaseapp.com",
+      databaseURL: "https://absensi-bahasa-inggris-default-rtdb.firebaseio.com",
+      projectId: "absensi-bahasa-inggris",
+      storageBucket: "absensi-bahasa-inggris.firebasestorage.app",
+      messagingSenderId: "234180859491",
+      appId: "1:234180859491:web:572224bdd9388713c70a56"
+    };
+
+    // Inisialisasi Firebase
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.database();
+
+    // Global App State
+    let kelasAktif = "87";
+    let dataSiswaGlobal = {}; // Format: { kelas: { id: { noAbsen, nama } } }
+    let dataAbsensiGlobal = {}; // Format: { kelas: { tanggal: { idSiswa: status } } }
+
+    // -------------------------------------------------------------
+    // 2. JAM DIGITAL & INITIALIZATION
+    // -------------------------------------------------------------
+    function initClock() {
+      setInterval(() => {
+        const now = new Date();
+        document.getElementById('jam-digital').innerText = now.toLocaleTimeString('id-ID') + ' WIB';
+        const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+        document.getElementById('tanggal-digital').innerText = now.toLocaleDateString('id-ID', options);
+      }, 1000);
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      initClock();
+      
+      // Set default input bulan rekap ke bulan saat ini
+      const hariIni = new Date();
+      const bulanFormat = hariIni.toISOString().slice(0, 7);
+      document.getElementById('filter-bulan').value = bulanFormat;
+
+      // Realtime Listener dari Firebase Cloud Database
+      syncCloudData();
+    });
+
+    // -------------------------------------------------------------
+    // 3. SINKRONISASI REALTIME (LAPTOP <-> HP)
+    // -------------------------------------------------------------
+    function syncCloudData() {
+      // Listen Siswa
+      db.ref('siswa').on('value', (snapshot) => {
+        dataSiswaGlobal = snapshot.val() || {};
+        renderTabelSiswa();
+        renderTabelAbsensi();
+        renderRekapBulanan();
+      });
+
+      // Listen Absensi
+      db.ref('absensi').on('value', (snapshot) => {
+        dataAbsensiGlobal = snapshot.val() || {};
+        renderTabelAbsensi();
+        renderRekapBulanan();
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 4. NAVIGASI TAB & KELAS
+    // -------------------------------------------------------------
+    function gantiKelas() {
+      kelasAktif = document.getElementById('select-kelas').value;
+      document.getElementById('label-kelas-absensi').innerText = kelasAktif;
+      document.getElementById('label-kelas-siswa').innerText = kelasAktif;
+      document.getElementById('label-kelas-rekap').innerText = kelasAktif;
+
+      renderTabelSiswa();
+      renderTabelAbsensi();
+      renderRekapBulanan();
+    }
+
+    function bukaTab(namaTab) {
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(el => {
+        el.classList.remove('bg-indigo-600', 'text-white', 'shadow');
+        el.classList.add('bg-slate-200', 'text-slate-700');
+      });
+
+      document.getElementById(`tab-${namaTab}`).classList.remove('hidden');
+      const btn = document.getElementById(`tab-btn-${namaTab}`);
+      btn.classList.remove('bg-slate-200', 'text-slate-700');
+      btn.classList.add('bg-indigo-600', 'text-white', 'shadow');
+    }
+
+    // Helper Tanggal ISO Hari ini (YYYY-MM-DD)
+    function getTanggalHariIni() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    // -------------------------------------------------------------
+    // 5. MANAJEMEN SISWA (CRUD)
+    // -------------------------------------------------------------
+    function tambahSiswa(e) {
+      e.preventDefault();
+      const noAbsen = document.getElementById('input-no-absen').value;
+      const nama = document.getElementById('input-nama-siswa').value.trim();
+
+      if (!noAbsen || !nama) return;
+
+      const newRef = db.ref(`siswa/${kelasAktif}`).push();
+      newRef.set({
+        noAbsen: parseInt(noAbsen),
+        nama: nama
+      }, (error) => {
+        if (!error) {
+          Swal.fire('Berhasil!', 'Data siswa berhasil ditambahkan.', 'success');
+          document.getElementById('form-siswa').reset();
+        }
+      });
+    }
+
+    function editSiswa(idSiswa, noAbsenLama, namaLama) {
+      Swal.fire({
+        title: 'Edit Data Siswa',
+        html:
+          `<input id="swal-no" class="swal2-input" placeholder="No Absen" value="${noAbsenLama}">` +
+          `<input id="swal-nama" class="swal2-input" placeholder="Nama Siswa" value="${namaLama}">`,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: 'Simpan',
+        preConfirm: () => {
+          return {
+            noAbsen: parseInt(document.getElementById('swal-no').value),
+            nama: document.getElementById('swal-nama').value
+          }
+        }
+      }).then((result) => {
+        if (result.isConfirmed) {
+          db.ref(`siswa/${kelasAktif}/${idSiswa}`).update(result.value, (err) => {
+            if (!err) Swal.fire('Diperbarui!', 'Data berhasil diubah.', 'success');
+          });
+        }
+      });
+    }
+
+    function hapusSiswa(idSiswa) {
+      Swal.fire({
+        title: 'Hapus Siswa?',
+        text: "Data yang dihapus tidak bisa dikembalikan!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#e11d48',
+        confirmButtonText: 'Ya, Hapus!'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          db.ref(`siswa/${kelasAktif}/${idSiswa}`).remove(() => {
+            Swal.fire('Terhapus!', 'Data siswa telah dihapus.', 'success');
+          });
+        }
+      });
+    }
+
+    function renderTabelSiswa() {
+      const tbody = document.getElementById('tbody-siswa');
+      tbody.innerHTML = '';
+
+      const listSiswa = dataSiswaGlobal[kelasAktif] || {};
+      const sortedKeys = Object.keys(listSiswa).sort((a,b) => listSiswa[a].noAbsen - listSiswa[b].noAbsen);
+
+      if (sortedKeys.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center py-4 text-slate-400">Belum ada data siswa di kelas ini.</td></tr>`;
+        return;
+      }
+
+      sortedKeys.forEach(id => {
+        const s = listSiswa[id];
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 border-b">
+            <td class="px-4 py-3 text-center font-bold">${s.noAbsen}</td>
+            <td class="px-6 py-3">${s.nama}</td>
+            <td class="px-4 py-3 text-center space-x-1">
+              <button onclick="editSiswa('${id}', ${s.noAbsen}, '${s.nama}')" class="px-2 py-1 bg-amber-500 text-white rounded text-xs">Edit</button>
+              <button onclick="hapusSiswa('${id}')" class="px-2 py-1 bg-rose-600 text-white rounded text-xs">Hapus</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 6. SISTEM ABSENSI HARIAN
+    // -------------------------------------------------------------
+    function renderTabelAbsensi() {
+      const tbody = document.getElementById('tbody-absensi');
+      tbody.innerHTML = '';
+
+      const listSiswa = dataSiswaGlobal[kelasAktif] || {};
+      const sortedKeys = Object.keys(listSiswa).sort((a,b) => listSiswa[a].noAbsen - listSiswa[b].noAbsen);
+      const tglHariIni = getTanggalHariIni();
+      const absensiHariIni = (dataAbsensiGlobal[kelasAktif] && dataAbsensiGlobal[kelasAktif][tglHariIni]) || {};
+
+      if (sortedKeys.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-slate-400">Data siswa kosong. Tambahkan siswa terlebih dahulu.</td></tr>`;
+        return;
+      }
+
+      let no = 1;
+      sortedKeys.forEach(idSiswa => {
+        const s = listSiswa[idSiswa];
+        const status = absensiHariIni[idSiswa] || 'H'; // Default: Hadir (H)
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 border-b">
+            <td class="px-4 py-3 text-center">${no++}</td>
+            <td class="px-4 py-3 text-center font-bold">${s.noAbsen}</td>
+            <td class="px-6 py-3 font-medium text-slate-900">${s.nama}</td>
+            <td class="px-6 py-3 text-center">
+              <div class="flex justify-center items-center gap-3">
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="radio" name="absensi_${idSiswa}" value="H" ${status === 'H' ? 'checked' : ''} class="w-4 h-4 text-emerald-600 focus:ring-emerald-500">
+                  <span class="ml-1 text-xs font-semibold text-emerald-700">H</span>
+                </label>
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="radio" name="absensi_${idSiswa}" value="S" ${status === 'S' ? 'checked' : ''} class="w-4 h-4 text-amber-500 focus:ring-amber-400">
+                  <span class="ml-1 text-xs font-semibold text-amber-600">S</span>
+                </label>
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="radio" name="absensi_${idSiswa}" value="I" ${status === 'I' ? 'checked' : ''} class="w-4 h-4 text-blue-600 focus:ring-blue-500">
+                  <span class="ml-1 text-xs font-semibold text-blue-600">I</span>
+                </label>
+                <label class="inline-flex items-center cursor-pointer">
+                  <input type="radio" name="absensi_${idSiswa}" value="A" ${status === 'A' ? 'checked' : ''} class="w-4 h-4 text-rose-600 focus:ring-rose-500">
+                  <span class="ml-1 text-xs font-semibold text-rose-600">A</span>
+                </label>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function simpanAbsensi() {
+      const listSiswa = dataSiswaGlobal[kelasAktif] || {};
+      const tglHariIni = getTanggalHariIni();
+      let payloadAbsensi = {};
+
+      Object.keys(listSiswa).forEach(idSiswa => {
+        const selectedRadio = document.querySelector(`input[name="absensi_${idSiswa}"]:checked`);
+        if (selectedRadio) {
+          payloadAbsensi[idSiswa] = selectedRadio.value;
+        }
+      });
+
+      db.ref(`absensi/${kelasAktif}/${tglHariIni}`).set(payloadAbsensi, (err) => {
+        if (!err) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Absensi Tersimpan!',
+            text: `Data absensi kelas ${kelasAktif} tanggal ${tglHariIni} berhasil disimpan ke cloud Database.`,
+            timer: 2000,
+            showConfirmButton: false
+          });
+        }
+      });
+    }
+
+    // -------------------------------------------------------------
+    // 7. IMPORT DATA SISWA DARI EXCEL
+    // -------------------------------------------------------------
+    function importExcel() {
+      const fileInput = document.getElementById('input-excel');
+      const file = fileInput.files[0];
+
+      if (!file) {
+        Swal.fire('Peringatan', 'Pilih file Excel terlebih dahulu!', 'warning');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = function (e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+
+        if (jsonData.length === 0) {
+          Swal.fire('Error', 'File Excel kosong atau format salah.', 'error');
+          return;
+        }
+
+        let countImport = 0;
+        jsonData.forEach(row => {
+          // Mendukung header Excel: [No Absen, Nama Siswa, Kelas]
+          const noAbsen = row['No Absen'] || row['noAbsen'] || row['NO'];
+          const nama = row['Nama Siswa'] || row['Nama'] || row['NAMA'];
+          const kelasTarget = String(row['Kelas'] || row['kelas'] || kelasAktif);
+
+          if (noAbsen && nama) {
+            db.ref(`siswa/${kelasTarget}`).push({
+              noAbsen: parseInt(noAbsen),
+              nama: String(nama).trim()
+            });
+            countImport++;
+          }
+        });
+
+        Swal.fire('Selesai!', `Berhasil mengimpor ${countImport} siswa.`, 'success');
+        fileInput.value = '';
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    // -------------------------------------------------------------
+    // 8. REKAP BULANAN & EKSPOR EXCEL
+    // -------------------------------------------------------------
+    function renderRekapBulanan() {
+      const tbody = document.getElementById('tbody-rekap');
+      tbody.innerHTML = '';
+
+      const bulanPilihan = document.getElementById('filter-bulan').value; // YYYY-MM
+      const listSiswa = dataSiswaGlobal[kelasAktif] || {};
+      const sortedKeys = Object.keys(listSiswa).sort((a,b) => listSiswa[a].noAbsen - listSiswa[b].noAbsen);
+      const absensiKelas = dataAbsensiGlobal[kelasAktif] || {};
+
+      if (sortedKeys.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-slate-400">Data siswa kosong.</td></tr>`;
+        return;
+      }
+
+      sortedKeys.forEach(idSiswa => {
+        const s = listSiswa[idSiswa];
+        let totalS = 0, totalI = 0, totalA = 0;
+
+        // Loop setiap tanggal di database untuk menghitung akumulasi status Sakit, Izin, Alpa
+        Object.keys(absensiKelas).forEach(tanggal => {
+          if (tanggal.startsWith(bulanPilihan)) {
+            const status = absensiKelas[tanggal][idSiswa];
+            if (status === 'S') totalS++;
+            if (status === 'I') totalI++;
+            if (status === 'A') totalA++;
+          }
+        });
+
+        tbody.innerHTML += `
+          <tr class="hover:bg-slate-50 border-b">
+            <td class="px-4 py-3 text-center font-bold">${s.noAbsen}</td>
+            <td class="px-6 py-3 font-medium text-slate-900">${s.nama}</td>
+            <td class="px-4 py-3 text-center bg-yellow-50/50 font-bold text-yellow-700">${totalS}</td>
+            <td class="px-4 py-3 text-center bg-blue-50/50 font-bold text-blue-700">${totalI}</td>
+            <td class="px-4 py-3 text-center bg-rose-50/50 font-bold text-rose-700">${totalA}</td>
+          </tr>
+        `;
+      });
+    }
+
+    // Ekspor Excel yang menyimpan status per sheet untuk masing-masing kelas
+    function eksporRekapExcel() {
+      const wb = XLSX.utils.book_new();
+      const daftarKelas = ["87", "88", "91", "92", "93", "94"];
+
+      daftarKelas.forEach(kelas => {
+        const listSiswa = dataSiswaGlobal[kelas] || {};
+        const sortedKeys = Object.keys(listSiswa).sort((a,b) => listSiswa[a].noAbsen - listSiswa[b].noAbsen);
+        const absensiKelas = dataAbsensiGlobal[kelas] || {};
+
+        let rowData = [];
+
+        sortedKeys.forEach(idSiswa => {
+          const s = listSiswa[idSiswa];
+          let totalS = 0, totalI = 0, totalA = 0;
+
+          Object.keys(absensiKelas).forEach(tanggal => {
+            const status = absensiKelas[tanggal][idSiswa];
+            if (status === 'S') totalS++;
+            if (status === 'I') totalI++;
+            if (status === 'A') totalA++;
+          });
+
+          // Hanya merekap status Sakit, Izin, Alpa sesuai instruksi poin 6
+          rowData.push({
+            'No Absen': s.noAbsen,
+            'Nama Siswa': s.nama,
+            'Kelas': kelas,
+            'Sakit (S)': totalS,
+            'Izin (I)': totalI,
+            'Alpa (A)': totalA
+          });
+        });
+
+        const ws = XLSX.utils.json_to_sheet(rowData);
+        XLSX.utils.book_append_sheet(wb, ws, `Kelas ${kelas}`);
+      });
+
+      XLSX.writeFile(wb, `Rekap_Absensi_SMPN6Metro_${getTanggalHariIni()}.xlsx`);
+    }
+  </script>
+</body>
+</html>
